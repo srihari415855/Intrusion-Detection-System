@@ -20,7 +20,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ─── Page Config ──────────────────────────────────────────────────────────────
-st.set_page_config(page_title="IDS v3 — XGBoost Enhanced", layout="wide")
+st.set_page_config(page_title="Intrusion Detection System", layout="wide")
 
 # ─── Custom CSS ───────────────────────────────────────────────────────────────
 st.markdown("""
@@ -49,8 +49,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🛡️ Intrusion Detection System — v3 (XGBoost Enhanced)")
-st.caption("Upgraded from Logistic Regression + PCA → XGBoost + Feature Engineering + SMOTE + Threshold Tuning")
+st.title("Intrusion Detection System")
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 NORMAL_LABEL = 11.0
@@ -152,7 +151,6 @@ if st.session_state.show_eda:
     st.subheader("Engineered Features Preview")
     engineered_cols = [c for c in df.columns if c not in df_raw.columns]
     if engineered_cols:
-        st.info(f"✨ {len(engineered_cols)} new features added: `{'`, `'.join(engineered_cols)}`")
         st.dataframe(df[engineered_cols + ['traffic_type']].head(10))
     else:
         st.info("No engineered features found — check column names match NSL-KDD format.")
@@ -193,23 +191,7 @@ if st.session_state.show_eda:
 st.divider()
 
 # ─── SECTION 2: MODEL TRAINING ────────────────────────────────────────────────
-st.header("2. Model Training — XGBoost + Feature Engineering + SMOTE")
-
-# Improvements summary
-with st.expander("📋 What changed from v2?", expanded=True):
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown("**🔁 Algorithm**")
-        st.markdown("~~Logistic Regression~~ → **XGBoost** (non-linear, tree-based)")
-    with col2:
-        st.markdown("**📐 Features**")
-        st.markdown("~~PCA compression~~ → **Raw features + engineered ratios**")
-    with col3:
-        st.markdown("**⚖️ Imbalance**")
-        st.markdown("~~class_weight only~~ → **SMOTE oversampling**")
-    with col4:
-        st.markdown("**🎯 Threshold**")
-        st.markdown("~~Fixed 0.5~~ → **F1-optimal threshold tuning**")
+st.header("2. Model Training")
 
 # XGBoost hyperparameter controls
 st.subheader("XGBoost Hyperparameters")
@@ -229,8 +211,8 @@ with col_p5:
 with col_p6:
     colsample = st.slider("Column sample ratio", 0.5, 1.0, 0.8, 0.05)
 
-if st.button("🚀 Train XGBoost IDS Model", type="primary"):
-    with st.spinner("Training XGBoost model..."):
+if st.button("Train IDS Model", type="primary"):
+    with st.spinner("Training IDS model..."):
 
         # 1. Prepare features (drop non-feature cols)
         drop_cols = ['outcome', 'traffic_type']
@@ -256,7 +238,6 @@ if st.button("🚀 Train XGBoost IDS Model", type="primary"):
         # 4. SMOTE (IMPROVEMENT 3)
         if use_smote:
             progress_text = st.empty()
-            progress_text.info("Applying SMOTE to balance classes...")
             sm = SMOTE(random_state=42, k_neighbors=5)
             X_train_final, y_train_final = sm.fit_resample(X_train_scaled, y_train)
             progress_text.success(
@@ -324,7 +305,7 @@ if st.button("🚀 Train XGBoost IDS Model", type="primary"):
             'evals_result': model.evals_result() if hasattr(model, 'evals_result') else None
         }
 
-        st.success("✅ XGBoost model trained successfully!")
+        st.success("XGBoost model trained successfully!")
 
 # Display training results if available
 if st.session_state.train_results is not None:
@@ -478,7 +459,7 @@ if st.session_state.model is not None:
                       else '#3498db' for f in imp_df["Feature"]]
             ax_imp.barh(imp_df["Feature"], imp_imp := imp_df["Importance (Gain)"], color=colors)
             ax_imp.invert_yaxis()
-            ax_imp.set_title("Top 20 Most Important Features (Gain)")
+            ax_imp.set_title("Top 20 Most Important Features")
             ax_imp.set_xlabel("Gain")
             legend_patches = [
                 mpatches.Patch(color='#e74c3c', label='Engineered feature'),
@@ -491,7 +472,7 @@ if st.session_state.model is not None:
             engineered_in_top20 = [f for f in imp_df["Feature"]
                                    if any(x in f for x in ['_ratio','per_','combined','total_','diversity'])]
             if engineered_in_top20:
-                st.success(f"✨ Engineered features in top 20: `{'`, `'.join(engineered_in_top20)}`")
+                st.success(f"Engineered features in top 20: `{'`, `'.join(engineered_in_top20)}`")
 
         # Probability distribution
         st.subheader("Prediction Confidence Distribution")
@@ -510,106 +491,9 @@ if st.session_state.model is not None:
         ax_dist.legend()
         st.pyplot(fig_dist)
         plt.close(fig_dist)
-        st.caption("Well-separated distributions = model is highly confident. Overlap = uncertainty zone.")
 
 else:
-    st.info("⬆️ Please train the model first in Section 2.")
+    st.info("⬆️ Please train the model first")
 
 st.divider()
 
-# ─── SECTION 4: LIVE TRAFFIC SIMULATION ──────────────────────────────────────
-st.header("4. Live Traffic Prediction")
-st.caption("Simulate classifying a new network connection using the trained model.")
-
-if st.session_state.model is not None:
-    model = st.session_state.model
-    scaler = st.session_state.scaler
-    feature_names = st.session_state.feature_names
-    best_threshold = st.session_state.best_threshold
-
-    if feature_names and scaler:
-        st.write("Enter feature values (or use sample presets):")
-        preset = st.selectbox("Quick preset", ["Custom", "Normal traffic sample", "Port scan sample", "DoS sample"])
-
-        if preset == "Normal traffic sample":
-            # Pull a random normal sample from test set
-            normal_idx = st.session_state.y_test[st.session_state.y_test == 0].index
-            if len(normal_idx) > 0:
-                sample_raw = df.loc[normal_idx[0], feature_names].values
-            else:
-                sample_raw = np.zeros(len(feature_names))
-        elif preset in ("Port scan sample", "DoS sample"):
-            mal_idx = st.session_state.y_test[st.session_state.y_test == 1].index
-            if len(mal_idx) > 0:
-                offset = 0 if preset == "Port scan sample" else min(5, len(mal_idx)-1)
-                sample_raw = df.loc[mal_idx[offset], feature_names].values
-            else:
-                sample_raw = np.ones(len(feature_names))
-        else:
-            sample_raw = np.zeros(len(feature_names))
-
-        # Show a subset of sliders for key features
-        key_features = feature_names[:min(8, len(feature_names))]
-        input_vals = {}
-        cols = st.columns(4)
-        for i, feat in enumerate(key_features):
-            with cols[i % 4]:
-                raw_min = float(df[feat].min())
-                raw_max = float(df[feat].max())
-                # Add a small buffer so floating-point sample values never
-                # fall outside the widget bounds (fixes StreamlitValueBelowMinError)
-                buffer = max(abs(raw_min) * 0.01, abs(raw_max) * 0.01, 1e-6)
-                feat_min = raw_min - buffer
-                feat_max = raw_max + buffer
-                # Clamp the sample value strictly within [feat_min, feat_max]
-                raw_val = float(sample_raw[i]) if preset != "Custom" else raw_min
-                feat_val = float(np.clip(raw_val, feat_min, feat_max))
-                input_vals[feat] = st.number_input(
-                    feat, value=round(feat_val, 4),
-                    min_value=feat_min, max_value=feat_max,
-                    key=f"live_{feat}"
-                )
-
-        if st.button("🔍 Classify this connection"):
-            # Build input array using sample values, override key features
-            input_arr = sample_raw.copy().astype(float)
-            for i, feat in enumerate(key_features):
-                idx = feature_names.index(feat)
-                input_arr[idx] = input_vals[feat]
-
-            input_scaled = scaler.transform(input_arr.reshape(1, -1))
-            prob = model.predict_proba(input_scaled)[0, 1]
-            pred = int(prob >= best_threshold)
-
-            if pred == 1:
-                st.error(f"🚨 **MALICIOUS** — Confidence: {prob*100:.1f}% (threshold: {best_threshold:.2f})")
-            else:
-                st.success(f"✅ **NORMAL** — Malicious probability: {prob*100:.1f}% (threshold: {best_threshold:.2f})")
-
-            # Gauge chart
-            fig_gauge = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=prob * 100,
-                title={'text': "Malicious Probability (%)"},
-                gauge={
-                    'axis': {'range': [0, 100]},
-                    'bar': {'color': '#e74c3c' if pred == 1 else '#2ecc71'},
-                    'steps': [
-                        {'range': [0, best_threshold*100], 'color': '#d5f5e3'},
-                        {'range': [best_threshold*100, 100], 'color': '#fadbd8'}
-                    ],
-                    'threshold': {
-                        'line': {'color': 'black', 'width': 3},
-                        'thickness': 0.75,
-                        'value': best_threshold * 100
-                    }
-                }
-            ))
-            st.plotly_chart(fig_gauge, use_container_width=True)
-    else:
-        st.info("Train the model first to enable live prediction.")
-else:
-    st.info("⬆️ Train the model first.")
-
-st.divider()
-st.caption("IDS v3 | XGBoost + Feature Engineering + SMOTE + Threshold Tuning | NSL-KDD Dataset")
